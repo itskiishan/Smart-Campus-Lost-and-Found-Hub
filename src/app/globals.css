@@ -1,0 +1,104 @@
+@import "tailwindcss";
+
+@theme {
+  --color-abes-maroon: #7a1f2b;
+  --color-abes-dark-maroon: #631822;
+  --color-abes-black: #171717;
+  --color-abes-white: #ffffff;
+  --color-abes-warm-white: #fafaf8;
+  --color-abes-gray: #6b6b67;
+  --color-abes-light-gray: #f4f3f0;
+  --color-abes-border: #e8e6e1;
+  --color-abes-accent-light: #f6edef;
+
+  --color-muted-success: #4f7c68;
+  --color-muted-warning: #b88a3b;
+  --color-muted-danger: #c94a4a;
+}
+
+body {
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  background-color: #fafaf8;
+  color: #171717;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Wispr-inspired restrained micro-animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes dropdownEnter {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-dropdown {
+  animation: dropdownEnter 0.15s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-shimmer {
+  background: linear-gradient(
+    90deg,
+    #f4f3f0 25%,
+    #e8e6e1 37%,
+    #f4f3f0 63%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in,
+  .animate-dropdown {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  .animate-shimmer {
+    animation: none !important;
+    background: #f4f3f0 !important;
+  }
+
+  *, ::before, ::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
