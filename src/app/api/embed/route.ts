@@ -5,6 +5,7 @@ import type { Database } from "@/types/database";
 
 // Configure Transformers.js for Node.js server environment
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 /**
  * Obtain an authenticated Supabase client derived from Bearer token or server cookies.

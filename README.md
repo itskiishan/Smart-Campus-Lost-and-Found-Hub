@@ -10,6 +10,14 @@ An AI-assisted, centralized campus Lost & Found platform featuring multimodal si
 
 ---
 
+## 🌐 Live Demo
+
+🚀 **Production Web Application**: [https://smart-campus-lost-and-found-hub.vercel.app/](https://smart-campus-lost-and-found-hub.vercel.app/)
+
+Judges and evaluators can interact with the live deployed application, explore reported items, test AI matching suggestions, and walk through the physical item claim and handover workflows.
+
+---
+
 ## 📌 Overview
 
 ### The Problem
