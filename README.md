@@ -46,9 +46,9 @@ The system calculates a dynamic composite similarity score between a target item
 
 1. **Text Semantic Similarity ($S_{\text{text}}$)**:
    - Uses OpenAI CLIP text encoder (`Xenova/clip-vit-base-patch32` via `@xenova/transformers`).
-   - Generates a **512-dimensional L2-normalized vector** from a structured representation:
+   - Generates a **512-dimensional L2-normalized vector** ($\mathbf{v}$) from a structured representation:
      `"Item: {title}. Description: {description}. Category: {category}."`
-   - Computes cosine similarity: $1.0 - (\mathbf{v}_{\text{target}} \cdot \mathbf{v}_{\text{candidate}})$.
+   - Computes **cosine similarity**: $S_{\text{text}} = \mathbf{v}_{\text{target}} \cdot \mathbf{v}_{\text{candidate}}$ for L2-normalized vectors (where **cosine distance** is $1.0 - S_{\text{text}}$).
 
 2. **Visual Image Similarity ($S_{\text{image}}$)**:
    - Uses OpenAI CLIP vision encoder (`Xenova/clip-vit-base-patch32`).
@@ -70,7 +70,7 @@ The system calculates a dynamic composite similarity score between a target item
 
 ## 🔒 Authentication & Security
 
-- **Campus Domain Guard**: User registration is currently restricted to valid campus emails (`@abes.ac.in`) as an intentional security control.
+- **Campus Authentication**: User registration and login are currently restricted to verified `@abes.ac.in` email addresses through the application's authentication guard.
 - **Row Level Security (RLS)**: PostgreSQL tables (`lost_items`, `claims`, `handovers`, `notifications`) enforce row-level access control.
 - **RPC Encapsulation**: Critical state transitions (`approve_claim`, `verify_handover`, `link_claimant_report`) run as `SECURITY DEFINER` stored procedures.
 
@@ -86,11 +86,11 @@ zeteo/
 │   │   ├── api/
 │   │   │   ├── embed/         # Server route for CLIP text & image embeddings
 │   │   │   └── match/         # Server route for hybrid match RPC invocation
-│   │   ├── item/[id]/         # Item detail page & AI match suggestions
-│   │   ├── login/             # Authentication login page
+│   │   ├── item/[id]/         # Item detail page, claim review, & OTP handover UI
+│   │   ├── login/             # Authentication login & registration page
 │   │   ├── my-claims/         # User submitted claims tracker
 │   │   ├── my-reports/        # User submitted reports tracker
-│   │   ├── notifications/     # User notifications page
+│   │   ├── notifications/     # Real-time notifications page
 │   │   ├── profile/           # User account profile
 │   │   ├── report/            # Item report creation page
 │   │   ├── layout.tsx         # Root layout wrapper
@@ -98,11 +98,15 @@ zeteo/
 │   ├── components/
 │   │   ├── AIMatchSuggestions.tsx  # Candidate match cards & breakdown UI
 │   │   ├── ClaimModal.tsx          # Direct & linked claim submission modal
+│   │   ├── Dashboard.tsx           # Main homepage feed component
 │   │   ├── Header.tsx              # Main navigation header
-│   │   ├── HandoverCard.tsx        # OTP handover verification UI
-│   │   └── NotificationBell.tsx    # Real-time notification dropdown
+│   │   ├── ItemCard.tsx            # Report card component
+│   │   ├── LocationFilters.tsx     # Campus location filter chips
+│   │   ├── NotificationBell.tsx    # Notification bell dropdown
+│   │   └── SearchBar.tsx           # Lost & Found report search input
 │   ├── lib/
 │   │   ├── locations.ts        # Campus location vocabulary
+│   │   ├── timeUtils.ts        # 12-hour time formatting utilities
 │   │   ├── supabase.ts         # Client Supabase configuration
 │   │   └── supabase/server.ts  # Server Supabase client creation
 │   └── types/
@@ -167,4 +171,4 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ## 🎓 Academic Statement
 
-This project was developed as a final year B.Tech Computer Science Engineering project. It demonstrates the practical application of multimodal machine learning, vector database search (`pgvector`), and secure full-stack web architecture in solving real-world campus operational challenges.
+This project was developed as a 3rd-year B.Tech Computer Science and Engineering project. It demonstrates the practical application of multimodal machine learning, vector database search (`pgvector`), and secure full-stack web architecture in solving real-world campus operational challenges.
