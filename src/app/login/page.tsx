@@ -136,15 +136,17 @@ export default function LoginPage() {
     <div className="flex min-h-screen flex-col justify-center bg-[#FAFAF8] px-4 py-12 sm:px-6 lg:px-8 text-[#171717]">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         <Link href="/" className="flex flex-col items-center justify-center gap-2 group">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#7A1F2B] text-white font-bold text-base shadow-2xs transition group-hover:bg-[#631822]">
-            ABES
-          </div>
+          <img
+            src="/logo.png"
+            alt="Zeteo Logo"
+            className="h-10 w-10 object-contain shrink-0 transition duration-150 group-hover:scale-105"
+          />
           <h2 className="text-center text-xl font-extrabold tracking-tight text-[#171717] sm:text-2xl">
-            ABESEC Lost &amp; Found
+            Zeteo
           </h2>
         </Link>
         <p className="mt-1 text-center text-xs text-[#6B6B67]">
-          Official Campus Authentication Portal
+          Campus Lost &amp; Found
         </p>
       </div>
 
@@ -222,7 +224,7 @@ export default function LoginPage() {
                     required
                     value={admissionNumber}
                     onChange={(e) => setAdmissionNumber(e.target.value)}
-                    placeholder="e.g. 2024ABES1234"
+                    placeholder="e.g. 2024ZT1234"
                     className="mt-1 block w-full rounded-xl border border-[#E8E6E1] bg-[#FAFAF8] px-3.5 py-2.5 text-xs text-[#171717] placeholder-[#6B6B67] focus:border-[#7A1F2B] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#7A1F2B]/15"
                   />
                 </div>
@@ -234,7 +236,7 @@ export default function LoginPage() {
                 htmlFor="email"
                 className="block text-xs font-semibold text-[#171717]"
               >
-                ABESEC Email (@abes.ac.in)
+                Campus Email (@abes.ac.in)
               </label>
               <input
                 id="email"
@@ -242,7 +244,7 @@ export default function LoginPage() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="student@abes.ac.in"
+                placeholder="student@campus.edu"
                 className="mt-1 block w-full rounded-xl border border-[#E8E6E1] bg-[#FAFAF8] px-3.5 py-2.5 text-xs text-[#171717] placeholder-[#6B6B67] focus:border-[#7A1F2B] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#7A1F2B]/15"
               />
             </div>

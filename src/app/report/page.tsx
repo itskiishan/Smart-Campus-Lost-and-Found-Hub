@@ -7,6 +7,8 @@ import { supabase } from "@/lib/supabase";
 import { CAMPUS_LOCATIONS } from "@/lib/locations";
 import type { User } from "@supabase/supabase-js";
 import type { Database, ItemStatus } from "@/types/database";
+import TimeInput12Hour from "@/components/TimeInput12Hour";
+import { convert12HourTo24Hour, validate12HourTime } from "@/lib/timeUtils";
 
 const REPORT_CATEGORIES = [
   "Electronics",
@@ -38,12 +40,12 @@ export default function ReportPage() {
   // Date and Time
   const todayStr = new Date().toISOString().split("T")[0];
   const [incidentDate, setIncidentDate] = useState<string>(todayStr);
-  const [incidentTime, setIncidentTime] = useState<string>("");
+  const [incidentTime, setIncidentTime] = useState<string>("12:00 PM");
   const [isTimeApproximate, setIsTimeApproximate] = useState<boolean>(true);
 
-  // Photo state
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
+  // Multi-photo state (Up to 5 images)
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [previewUrls, setPreviewUrls] = useState<string[]>([]);
 
   // Submission state
   const [submitting, setSubmitting] = useState(false);
@@ -63,35 +65,50 @@ export default function ReportPage() {
     });
   }, [router]);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Update object URLs when selectedFiles changes
+  useEffect(() => {
+    const urls = selectedFiles.map((file) => URL.createObjectURL(file));
+    setPreviewUrls(urls);
+
+    return () => {
+      urls.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [selectedFiles]);
+
+  const handleFilesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setError(null);
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
 
-    // Validate type
     const validTypes = ["image/jpeg", "image/png", "image/webp"];
-    if (!validTypes.includes(file.type)) {
-      setError("Unsupported image type. Please select a JPEG, PNG, or WEBP image.");
+    const maxSize = 5 * 1024 * 1024; // 5MB per file
+
+    // Check maximum total images limit (5)
+    if (selectedFiles.length + files.length > 5) {
+      setError(`You can upload a maximum of 5 images. You already have ${selectedFiles.length} selected.`);
       return;
     }
 
-    // Validate max size 5MB
-    const maxSize = 5 * 1024 * 1024;
-    if (file.size > maxSize) {
-      setError("Image file is too large. Maximum allowed size is 5MB.");
-      return;
+    const newValidFiles: File[] = [];
+    for (const file of files) {
+      if (!validTypes.includes(file.type)) {
+        setError(`Unsupported format (${file.name}). Please select JPEG, PNG, or WEBP images.`);
+        return;
+      }
+      if (file.size > maxSize) {
+        setError(`File "${file.name}" exceeds 5MB size limit.`);
+        return;
+      }
+      newValidFiles.push(file);
     }
 
-    setSelectedFile(file);
-    setImagePreviewUrl(URL.createObjectURL(file));
+    setSelectedFiles((prev) => [...prev, ...newValidFiles]);
+    // Reset the input value so selecting the same file again works
+    e.target.value = "";
   };
 
-  const handleRemovePhoto = () => {
-    setSelectedFile(null);
-    if (imagePreviewUrl) {
-      URL.revokeObjectURL(imagePreviewUrl);
-      setImagePreviewUrl(null);
-    }
+  const handleRemovePhoto = (indexToRemove: number) => {
+    setSelectedFiles((prev) => prev.filter((_, idx) => idx !== indexToRemove));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -129,8 +146,13 @@ export default function ReportPage() {
       return;
     }
 
-    const timeString = incidentTime ? incidentTime : "00:00";
-    const combinedDate = new Date(`${incidentDate}T${timeString}:00`);
+    if (!validate12HourTime(incidentTime)) {
+      setError("Please select or enter a valid 12-hour time format (e.g. 02:05 PM).");
+      return;
+    }
+
+    const time24 = convert12HourTo24Hour(incidentTime) || "12:00";
+    const combinedDate = new Date(`${incidentDate}T${time24}:00`);
 
     if (isNaN(combinedDate.getTime())) {
       setError("Invalid incident date or time format.");
@@ -148,33 +170,44 @@ export default function ReportPage() {
     setSubmitting(true);
 
     try {
-      let uploadedImageUrl: string | null = null;
+      let primaryImageUrl: string | null = null;
+      const additionalImageUrls: string[] = [];
 
-      // 1. Upload photo if provided
-      if (selectedFile) {
-        const fileExt = selectedFile.name.split(".").pop() || "jpg";
-        const sanitizedFileName = `${Date.now()}-${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
-        const filePath = `${user.id}/${sanitizedFileName}`;
+      // 1. Upload photos if provided (up to 5)
+      if (selectedFiles.length > 0) {
+        for (let i = 0; i < selectedFiles.length; i++) {
+          const file = selectedFiles[i];
+          const fileExt = file.name.split(".").pop() || "jpg";
+          const sanitizedFileName = `${Date.now()}-${i}-${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
+          const filePath = `${user.id}/${sanitizedFileName}`;
 
-        const { error: uploadError } = await supabase.storage
-          .from("item-photos")
-          .upload(filePath, selectedFile, {
-            contentType: selectedFile.type,
-            upsert: false,
-          });
+          const { error: uploadError } = await supabase.storage
+            .from("item-photos")
+            .upload(filePath, file, {
+              contentType: file.type,
+              upsert: false,
+            });
 
-        if (uploadError) {
-          console.warn("Storage upload warning:", uploadError);
-          setError(`Photo upload failed: ${uploadError.message}. Please try again or submit without a photo.`);
-          setSubmitting(false);
-          return;
+          if (uploadError) {
+            console.warn(`Storage upload warning on file ${i + 1}:`, uploadError);
+            setError(`Photo upload failed for image ${i + 1}: ${uploadError.message}. Please try again.`);
+            setSubmitting(false);
+            return;
+          }
+
+          const { data: publicUrlData } = supabase.storage
+            .from("item-photos")
+            .getPublicUrl(filePath);
+
+          const publicUrl = publicUrlData?.publicUrl || null;
+          if (publicUrl) {
+            if (i === 0) {
+              primaryImageUrl = publicUrl;
+            } else {
+              additionalImageUrls.push(publicUrl);
+            }
+          }
         }
-
-        const { data: publicUrlData } = supabase.storage
-          .from("item-photos")
-          .getPublicUrl(filePath);
-
-        uploadedImageUrl = publicUrlData?.publicUrl || null;
       }
 
       // 2. Insert into public.lost_items
@@ -185,7 +218,8 @@ export default function ReportPage() {
         category,
         campus_location: campusLocation,
         incident_at: incidentAtISO,
-        image_url: uploadedImageUrl,
+        image_url: primaryImageUrl,
+        additional_images: additionalImageUrls,
         status: statusVal,
         item_type: statusVal,
       };
@@ -214,7 +248,7 @@ export default function ReportPage() {
             },
             body: JSON.stringify({
               itemId: insertedItem.id,
-              imageUrl: uploadedImageUrl || undefined,
+              imageUrl: primaryImageUrl || undefined,
             }),
           }).catch((embedErr) => {
             console.warn("Non-blocking AI embedding notice:", embedErr);
@@ -261,7 +295,7 @@ export default function ReportPage() {
             Back to Lost &amp; Found
           </Link>
           <span className="text-xs font-bold text-[#7A1F2B] uppercase tracking-wider">
-            ABESEC Campus Portal
+            Zeteo Campus Portal
           </span>
         </div>
       </header>
@@ -280,7 +314,7 @@ export default function ReportPage() {
               Report submitted successfully
             </h1>
             <p className="mt-2 text-xs text-[#6B6B67] max-w-md mx-auto leading-relaxed">
-              Your item is now visible in the ABESEC Lost &amp; Found hub to help reunite it with its owner.
+              Your item is now visible in the Zeteo Lost &amp; Found hub to help reunite it with its owner.
             </p>
             <div className="mt-6 flex justify-center">
               <Link
@@ -452,15 +486,9 @@ export default function ReportPage() {
 
                   <div>
                     <label htmlFor="incidentTime" className="block text-xs font-semibold text-[#171717] mb-1">
-                      Time <span className="text-[10px] font-normal text-[#6B6B67]">(Approximate is fine)</span>
+                      Time (12-Hour) <span className="text-[10px] font-normal text-[#6B6B67]">(Approximate is fine)</span>
                     </label>
-                    <input
-                      id="incidentTime"
-                      type="time"
-                      value={incidentTime}
-                      onChange={(e) => setIncidentTime(e.target.value)}
-                      className="w-full rounded-xl border border-[#E8E6E1] bg-[#FAFAF8] px-3.5 py-2.5 text-xs text-[#171717] focus:border-[#7A1F2B] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#7A1F2B]/15"
-                    />
+                    <TimeInput12Hour value={incidentTime} onChange={setIncidentTime} id="incidentTime" />
                   </div>
                 </div>
 
@@ -478,26 +506,83 @@ export default function ReportPage() {
                 </div>
               </div>
 
-              {/* Section 5: Photo */}
+              {/* Section 5: Photos */}
               <div className="space-y-4 border-t border-[#E8E6E1] pt-5">
-                <label className="block text-[11px] font-bold text-[#6B6B67] uppercase tracking-wider mb-1">
-                  5. Photo <span className="text-[10px] font-normal text-[#6B6B67] uppercase">(Optional)</span>
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="block text-[11px] font-bold text-[#6B6B67] uppercase tracking-wider">
+                    5. Photos <span className="text-[10px] font-normal text-[#6B6B67] uppercase">(Optional)</span>
+                  </label>
+                  <span className="text-[10px] font-semibold text-[#6B6B67]">
+                    {selectedFiles.length} / 5 images
+                  </span>
+                </div>
 
-                {imagePreviewUrl ? (
-                  <div className="relative aspect-[16/9] w-full max-w-sm overflow-hidden rounded-xl border border-[#E8E6E1] bg-[#FAFAF8]">
-                    <img
-                      src={imagePreviewUrl}
-                      alt="Selected preview"
-                      className="h-full w-full object-cover"
+                {previewUrls.length > 0 ? (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {previewUrls.map((url, idx) => (
+                        <div
+                          key={idx}
+                          className={`relative aspect-[4/3] rounded-xl overflow-hidden border ${
+                            idx === 0
+                              ? "border-[#7A1F2B] ring-2 ring-[#7A1F2B]/15"
+                              : "border-[#E8E6E1]"
+                          } bg-[#FAFAF8] group`}
+                        >
+                          <img
+                            src={url}
+                            alt={`Preview ${idx + 1}`}
+                            className="h-full w-full object-cover"
+                          />
+
+                          {/* Primary Cover Badge */}
+                          {idx === 0 && (
+                            <span className="absolute left-1.5 top-1.5 rounded bg-[#7A1F2B] px-1.5 py-0.5 text-[8px] font-bold text-white uppercase tracking-wider shadow-2xs">
+                              Primary / Cover
+                            </span>
+                          )}
+
+                          {/* Individual Remove Button */}
+                          <button
+                            type="button"
+                            onClick={() => handleRemovePhoto(idx)}
+                            aria-label={`Remove photo ${idx + 1}`}
+                            className="absolute right-1.5 top-1.5 rounded-full bg-black/65 p-1 text-white opacity-90 transition hover:bg-[#C94A4A] hover:opacity-100"
+                          >
+                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                      ))}
+
+                      {/* Add more tile if under 5 images */}
+                      {selectedFiles.length < 5 && (
+                        <label
+                          htmlFor="photoUploadMore"
+                          className="flex aspect-[4/3] cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-[#E8E6E1] bg-[#FAFAF8] p-3 text-center transition hover:border-[#7A1F2B] hover:bg-white"
+                        >
+                          <svg className="h-5 w-5 text-[#6B6B67] mb-1" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                          </svg>
+                          <span className="text-[11px] font-semibold text-[#171717]">
+                            Add photo
+                          </span>
+                          <span className="text-[9px] text-[#6B6B67]">
+                            ({5 - selectedFiles.length} slots left)
+                          </span>
+                        </label>
+                      )}
+                    </div>
+
+                    <input
+                      id="photoUploadMore"
+                      type="file"
+                      multiple
+                      accept="image/jpeg,image/png,image/webp"
+                      onChange={handleFilesChange}
+                      className="hidden"
                     />
-                    <button
-                      type="button"
-                      onClick={handleRemovePhoto}
-                      className="absolute right-2 top-2 rounded-lg bg-[#C94A4A] px-2.5 py-1 text-xs font-semibold text-white shadow-2xs hover:bg-red-700"
-                    >
-                      Remove
-                    </button>
                   </div>
                 ) : (
                   <div>
@@ -524,17 +609,18 @@ export default function ReportPage() {
                         />
                       </svg>
                       <span className="text-xs font-semibold text-[#171717]">
-                        Click to upload photo
+                        Click to upload photos (Up to 5 images)
                       </span>
                       <span className="mt-0.5 text-[10px] text-[#6B6B67]">
-                        JPEG, PNG, or WEBP (Max 5MB)
+                        JPEG, PNG, or WEBP (Max 5MB per image). First image is cover.
                       </span>
                     </label>
                     <input
                       id="photoUpload"
                       type="file"
+                      multiple
                       accept="image/jpeg,image/png,image/webp"
-                      onChange={handleFileChange}
+                      onChange={handleFilesChange}
                       className="hidden"
                     />
                   </div>

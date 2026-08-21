@@ -108,12 +108,10 @@ export default function AdminSidebar({
       <div>
         <div className="flex h-16 items-center border-b border-[#E8E6E1] px-5">
           <Link href="/admin" className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#7A1F2B] text-white font-bold text-xs shadow-2xs">
-              ABES
-            </div>
+            <img src="/logo.png" alt="Zeteo Logo" className="h-8 w-8 object-contain shrink-0" />
             <div>
               <span className="text-sm font-extrabold tracking-tight text-[#171717] block leading-tight">
-                Lost &amp; Found
+                Zeteo
               </span>
               <span className="text-[10px] font-semibold text-[#7A1F2B] uppercase tracking-wider block">
                 Admin Portal

@@ -26,7 +26,7 @@ export default function AdminHeader({
 
         <div>
           <span className="text-[10px] font-bold text-[#7A1F2B] uppercase tracking-wider block leading-none">
-            ABESEC Lost &amp; Found Admin Portal
+            Zeteo Admin Portal
           </span>
           <h1 className="text-sm font-bold text-[#171717] sm:text-base leading-tight mt-0.5">
             {sectionTitle}

@@ -27,6 +27,118 @@ async function getAuthenticatedSupabaseClient(request: Request) {
   return await createServerClient();
 }
 
+// Server-side Singleton for CLIP Vision Model
+class CLIPVisionSingleton {
+  static modelName = "Xenova/clip-vit-base-patch32";
+  static processor: any = null;
+  static model: any = null;
+  static loadingPromise: Promise<any> | null = null;
+
+  static async getInstance() {
+    if (this.processor && this.model) {
+      return { processor: this.processor, model: this.model };
+    }
+
+    if (!this.loadingPromise) {
+      this.loadingPromise = (async () => {
+        const { AutoProcessor, CLIPVisionModelWithProjection, env } = await import(
+          "@xenova/transformers"
+        );
+        env.allowLocalModels = false;
+
+        const processor = await AutoProcessor.from_pretrained(this.modelName);
+        const model = await CLIPVisionModelWithProjection.from_pretrained(this.modelName);
+
+        this.processor = processor;
+        this.model = model;
+        return { processor, model };
+      })();
+    }
+
+    return this.loadingPromise;
+  }
+}
+
+// Server-side Singleton for CLIP Text Model
+class CLIPTextSingleton {
+  static modelName = "Xenova/clip-vit-base-patch32";
+  static tokenizer: any = null;
+  static model: any = null;
+  static loadingPromise: Promise<any> | null = null;
+
+  static async getInstance() {
+    if (this.tokenizer && this.model) {
+      return { tokenizer: this.tokenizer, model: this.model };
+    }
+
+    if (!this.loadingPromise) {
+      this.loadingPromise = (async () => {
+        const { AutoTokenizer, CLIPTextModelWithProjection, env } = await import(
+          "@xenova/transformers"
+        );
+        env.allowLocalModels = false;
+
+        const tokenizer = await AutoTokenizer.from_pretrained(this.modelName);
+        const model = await CLIPTextModelWithProjection.from_pretrained(this.modelName);
+
+        this.tokenizer = tokenizer;
+        this.model = model;
+        return { tokenizer, model };
+      })();
+    }
+
+    return this.loadingPromise;
+  }
+}
+
+async function generateClipImageEmbedding(imageUrl: string): Promise<number[]> {
+  const { RawImage } = await import("@xenova/transformers");
+  const image = await RawImage.fromURL(imageUrl);
+  const { processor, model } = await CLIPVisionSingleton.getInstance();
+  const imageInputs = await processor(image);
+  const { image_embeds } = await model(imageInputs);
+
+  if (!image_embeds || !image_embeds.data) {
+    throw new Error("CLIP vision model failed to produce image embeddings tensor.");
+  }
+
+  const rawArray = Array.from(image_embeds.data as Float32Array);
+  if (rawArray.length !== 512) {
+    throw new Error(`Vision embedding output dimension mismatch: Expected 512, received ${rawArray.length}`);
+  }
+
+  let norm = 0;
+  for (let i = 0; i < rawArray.length; ++i) {
+    norm += rawArray[i] * rawArray[i];
+  }
+  norm = Math.sqrt(norm);
+
+  return norm > 0 ? rawArray.map((v) => v / norm) : rawArray;
+}
+
+async function generateClipTextEmbedding(text: string): Promise<number[]> {
+  const { tokenizer, model } = await CLIPTextSingleton.getInstance();
+  const textInputs = await tokenizer(text, { padding: true, truncation: true });
+  const { text_embeds } = await model(textInputs);
+
+  if (!text_embeds || !text_embeds.data) {
+    throw new Error("CLIP text model failed to produce embeddings tensor.");
+  }
+
+  const rawArray = Array.from(text_embeds.data as Float32Array);
+  if (rawArray.length !== 512) {
+    throw new Error(`Text embedding output dimension mismatch: Expected 512, received ${rawArray.length}`);
+  }
+
+  let norm = 0;
+  for (let i = 0; i < rawArray.length; ++i) {
+    norm += rawArray[i] * rawArray[i];
+  }
+  norm = Math.sqrt(norm);
+
+  return norm > 0 ? rawArray.map((v) => v / norm) : rawArray;
+}
+
 export async function GET(request: Request) {
   try {
     const supabase = await getAuthenticatedSupabaseClient(request);
@@ -54,33 +166,42 @@ export async function GET(request: Request) {
       );
     }
 
-    // 2. On-the-fly trigger for missing text_embedding if needed
+    // 2. On-the-fly fallback triggers for missing embeddings
+    const fallbackUpdatePayload: Record<string, any> = {};
+
+    // 2a. On-the-fly trigger for missing text_embedding if needed
     if (!targetItem.text_embedding) {
       try {
         const itemText = `Item: ${targetItem.title}. Description: ${targetItem.description || ""}. Category: ${targetItem.category}.`;
-        const { AutoTokenizer, CLIPTextModelWithProjection, env } = await import("@xenova/transformers");
-        env.allowLocalModels = false;
-
-        const tokenizer = await AutoTokenizer.from_pretrained("Xenova/clip-vit-base-patch32");
-        const textModel = await CLIPTextModelWithProjection.from_pretrained("Xenova/clip-vit-base-patch32");
-        const textInputs = await tokenizer(itemText, { padding: true, truncation: true });
-        const { text_embeds } = await textModel(textInputs);
-
-        if (text_embeds?.data) {
-          const rawArray = Array.from(text_embeds.data as Float32Array);
-          let norm = 0;
-          for (let i = 0; i < rawArray.length; ++i) norm += rawArray[i] * rawArray[i];
-          norm = Math.sqrt(norm);
-          const normalized = norm > 0 ? rawArray.map((v) => v / norm) : rawArray;
-          const formattedVector = `[${normalized.join(",")}]`;
-
-          // Save text embedding back to DB
-          await (supabase.from("lost_items") as any)
-            .update({ text_embedding: formattedVector })
-            .eq("id", itemId);
+        const textEmbedding = await generateClipTextEmbedding(itemText);
+        if (textEmbedding) {
+          fallbackUpdatePayload.text_embedding = `[${textEmbedding.join(",")}]`;
         }
       } catch (embedErr) {
         console.warn("[MATCH API] Non-blocking text embedding generation notice:", embedErr);
+      }
+    }
+
+    // 2b. On-the-fly trigger for missing image_embedding (using primary image_url)
+    if (targetItem.image_url && !targetItem.image_embedding) {
+      try {
+        const imageEmbedding = await generateClipImageEmbedding(targetItem.image_url);
+        if (imageEmbedding) {
+          fallbackUpdatePayload.image_embedding = `[${imageEmbedding.join(",")}]`;
+        }
+      } catch (imgErr) {
+        console.warn("[MATCH API] Non-blocking image embedding generation notice:", imgErr);
+      }
+    }
+
+    // Save any generated fallback embeddings back to DB
+    if (Object.keys(fallbackUpdatePayload).length > 0) {
+      try {
+        await (supabase.from("lost_items") as any)
+          .update(fallbackUpdatePayload)
+          .eq("id", itemId);
+      } catch (saveErr) {
+        console.warn("[MATCH API] Failed to save fallback embeddings to database:", saveErr);
       }
     }
 

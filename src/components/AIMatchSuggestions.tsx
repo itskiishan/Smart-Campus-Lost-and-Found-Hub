@@ -232,7 +232,7 @@ export function AIMatchSuggestions({ itemId }: AIMatchSuggestionsProps) {
                 </div>
 
                 <Link
-                  href={`/item/${m.id}`}
+                  href={`/item/${m.id}?claimant_item_id=${itemId}`}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-600 hover:bg-blue-500 text-white transition-colors ml-auto shadow-sm"
                 >
                   <span>View Candidate Item</span>

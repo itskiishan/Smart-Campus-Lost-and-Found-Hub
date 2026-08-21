@@ -4,6 +4,25 @@ export type ClaimStatus = "pending" | "approved" | "rejected";
 export type HandoverStatus = "active" | "completed" | "cancelled" | "expired";
 export type CustodyStatus = "received" | "in_vault" | "released" | "transferred";
 export type UserRole = "student" | "admin" | "super_admin";
+export type NotificationType =
+  | "NEW_CLAIM"
+  | "CLAIM_APPROVED"
+  | "CLAIM_REJECTED"
+  | "HANDOVER_STARTED"
+  | "HANDOVER_COMPLETED";
+
+export interface NotificationRow {
+  id: string;
+  user_id: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  item_id: string | null;
+  claim_id: string | null;
+  handover_id: string | null;
+  is_read: boolean;
+  created_at: string;
+}
 
 export interface LostItem {
   id: string;
@@ -13,6 +32,7 @@ export interface LostItem {
   category: string;
   campus_location: string;
   image_url: string | null;
+  additional_images?: string[] | null;
   image_embedding?: string | number[] | null;
   text_embedding?: string | number[] | null;
   status: ItemStatus;
@@ -40,6 +60,7 @@ export interface UserRow {
 export interface ClaimRow {
   id: string;
   lost_item_id: string;
+  claimant_item_id?: string | null;
   claimant_id: string;
   message: string;
   proof_image_url: string | null;
@@ -171,6 +192,7 @@ export type Database = {
           category: string;
           campus_location: string;
           image_url?: string | null;
+          additional_images?: string[] | null;
           status: ItemStatus;
           item_type?: "lost" | "found";
           moderation_status?: ModerationStatus | null;
@@ -204,6 +226,7 @@ export type Database = {
         Insert: {
           id?: string;
           lost_item_id: string;
+          claimant_item_id?: string | null;
           claimant_id: string;
           message: string;
           proof_image_url?: string | null;
@@ -264,6 +287,23 @@ export type Database = {
           created_at?: string;
         };
         Update: Partial<ItemCustody>;
+        Relationships: [];
+      };
+      notifications: {
+        Row: NotificationRow;
+        Insert: {
+          id?: string;
+          user_id: string;
+          type: NotificationType;
+          title: string;
+          message: string;
+          item_id?: string | null;
+          claim_id?: string | null;
+          handover_id?: string | null;
+          is_read?: boolean;
+          created_at?: string;
+        };
+        Update: Partial<NotificationRow>;
         Relationships: [];
       };
       campus_locations: {

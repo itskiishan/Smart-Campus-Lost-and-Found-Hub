@@ -37,8 +37,15 @@ export async function middleware(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname;
 
-  // Protect /report route: redirect unauthenticated users to /login
-  if (!user && pathname.startsWith("/report")) {
+  // Protect /report, /my-reports, /my-claims, /profile, /notifications: redirect unauthenticated users to /login
+  if (
+    !user &&
+    (pathname.startsWith("/report") ||
+      pathname.startsWith("/my-reports") ||
+      pathname.startsWith("/my-claims") ||
+      pathname.startsWith("/profile") ||
+      pathname.startsWith("/notifications"))
+  ) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);

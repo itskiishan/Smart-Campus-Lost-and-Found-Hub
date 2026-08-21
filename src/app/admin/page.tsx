@@ -168,7 +168,7 @@ export default function AdminOverviewPage() {
             <StatCard
               label="Total Registered Users"
               value={loading ? "..." : stats?.total_users_count ?? 0}
-              subtext="ABESEC accounts"
+              subtext="Registered campus accounts"
               href="/admin/users"
             />
           </div>

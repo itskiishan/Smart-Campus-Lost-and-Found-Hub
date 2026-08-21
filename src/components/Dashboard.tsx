@@ -34,6 +34,10 @@ export default function Dashboard() {
     };
   }, []);
 
+  const [typeFilter, setTypeFilter] = useState<
+    "all" | "lost" | "found" | "claimed" | "returned"
+  >("all");
+
   const fetchItems = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -78,9 +82,16 @@ export default function Dashboard() {
         item.description?.toLowerCase().includes(query) ||
         item.category.toLowerCase().includes(query);
 
-      return matchesLocation && matchesSearch;
+      const matchesType =
+        typeFilter === "all" ||
+        (typeFilter === "lost" && item.item_type === "lost" && item.status === "lost") ||
+        (typeFilter === "found" && item.item_type === "found" && item.status === "found") ||
+        (typeFilter === "claimed" && item.status === "claimed") ||
+        (typeFilter === "returned" && item.status === "returned");
+
+      return matchesLocation && matchesSearch && matchesType;
     });
-  }, [items, search, location]);
+  }, [items, search, location, typeFilter]);
 
   const reportHref = user ? "/report" : "/login";
 
@@ -91,9 +102,6 @@ export default function Dashboard() {
       {/* Compact SaaS Hero Section */}
       <section className="border-b border-[#E8E6E1] bg-white py-8 px-4 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-3xl text-center">
-          <span className="inline-block text-[10px] font-bold text-[#6B6B67] uppercase tracking-widest mb-1.5">
-            ABESEC CAMPUS
-          </span>
           <h1 className="text-2xl font-extrabold tracking-tight text-[#171717] sm:text-3xl lg:text-4xl">
             LOST SOMETHING? <span className="text-[#7A1F2B]">Let&apos;s get it back.</span>
           </h1>
@@ -119,6 +127,40 @@ export default function Dashboard() {
 
       {/* Main Feed Area */}
       <main id="feed" className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+        {/* Type / Status Filter Chips */}
+        <div className="mb-3 rounded-xl border border-[#E8E6E1] bg-white px-3 py-2.5 shadow-2xs">
+          <div
+            className="flex items-center gap-1.5 overflow-x-auto no-scrollbar"
+            role="tablist"
+            aria-label="Filter items by type or status"
+          >
+            {(
+              [
+                { key: "all", label: "All Reports" },
+                { key: "lost", label: "Lost" },
+                { key: "found", label: "Found" },
+                { key: "claimed", label: "Claimed" },
+                { key: "returned", label: "Returned" },
+              ] as const
+            ).map(({ key, label }) => (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                aria-selected={typeFilter === key}
+                onClick={() => setTypeFilter(key)}
+                className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold transition duration-150 ${
+                  typeFilter === key
+                    ? "bg-[#7A1F2B] text-white shadow-2xs"
+                    : "border border-[#E8E6E1] bg-white text-[#171717] hover:border-[#7A1F2B]/30 hover:bg-[#FAFAF8]"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Integrated Location Chips */}
         <div className="mb-4 rounded-xl border border-[#E8E6E1] bg-white p-3 shadow-2xs">
           <LocationFilters selected={location} onChange={setLocation} />

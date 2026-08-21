@@ -97,12 +97,26 @@ export default function ItemCard({ item, animationDelay = 0 }: ItemCardProps) {
             </div>
           )}
 
-          {/* Refined Status Pill */}
-          <span
-            className={`absolute left-2.5 top-2.5 rounded-md border px-2 py-0.5 text-[9px] font-bold tracking-wider uppercase ${status.bg} ${status.text} ${status.border}`}
-          >
-            {status.label}
-          </span>
+          {/* Report Type & Lifecycle Status Badges */}
+          <div className="absolute left-2.5 top-2.5 flex flex-wrap items-center gap-1.5">
+            <span
+              className={`rounded-md border px-2 py-0.5 text-[9px] font-bold tracking-wider uppercase ${
+                item.item_type === "found"
+                  ? "bg-emerald-50 text-[#4F7C68] border-emerald-200/60"
+                  : "bg-red-50 text-[#C94A4A] border-red-200/60"
+              }`}
+            >
+              {item.item_type === "found" ? "FOUND REPORT" : "LOST REPORT"}
+            </span>
+
+            {item.status !== "lost" && item.status !== "found" && (
+              <span
+                className={`rounded-md border px-2 py-0.5 text-[9px] font-bold tracking-wider uppercase ${status.bg} ${status.text} ${status.border}`}
+              >
+                {status.label}
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Content */}

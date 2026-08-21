@@ -271,7 +271,7 @@ export default function AdminUsersPage() {
             description={`Are you sure you want to change ${roleTarget.user.full_name}'s role from ${roleTarget.user.role.toUpperCase()} to ${roleTarget.newRole.toUpperCase()}?`}
             warningText={
               roleTarget.newRole !== "student"
-                ? "Granting administrative privileges permits access to the internal ABESEC Lost & Found Admin Portal."
+                ? "Granting administrative privileges permits access to the internal Zeteo Admin Portal."
                 : "Demoting an administrator revokes their access to the Admin Portal."
             }
             requireReason={false}

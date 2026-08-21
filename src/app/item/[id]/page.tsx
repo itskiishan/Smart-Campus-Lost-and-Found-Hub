@@ -1,13 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import type { LostItem, ClaimRow, ReporterClaimDetail, HandoverDetail } from "@/types/database";
 import { CAMPUS_LOCATIONS } from "@/lib/locations";
 import Header from "@/components/Header";
 import ClaimModal from "@/components/ClaimModal";
+import EditReportModal from "@/components/EditReportModal";
+import DeleteConfirmModal from "@/components/DeleteConfirmModal";
 import { AIMatchSuggestions } from "@/components/AIMatchSuggestions";
 import type { User } from "@supabase/supabase-js";
 
@@ -52,9 +54,40 @@ function getRelativeTime(dateString: string): string {
 export default function ItemDetailsPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const itemId = params?.id as string;
 
+  // Synchronously extract claimant_item_id on every render
+  const getClaimantItemId = (): string | null => {
+    const paramFromHook = searchParams?.get("claimant_item_id");
+    if (paramFromHook) return paramFromHook;
+    if (typeof window !== "undefined") {
+      const urlParams = new URLSearchParams(window.location.search);
+      return urlParams.get("claimant_item_id") || null;
+    }
+    return null;
+  };
+  const claimantItemId = getClaimantItemId();
+
   const [item, setItem] = useState<LostItem | null>(null);
+  const [targetItem, setTargetItem] = useState<LostItem | null>(null);
+  const [activeImageIndex, setActiveImageIndex] = useState<number>(0);
+
+  // Extract all available gallery images (primary image_url + additional_images)
+  const galleryImages = useMemo(() => {
+    if (!item) return [];
+    const list: string[] = [];
+    if (item.image_url) list.push(item.image_url);
+    if (item.additional_images && Array.isArray(item.additional_images)) {
+      for (const img of item.additional_images) {
+        if (img && typeof img === "string" && !list.includes(img)) {
+          list.push(img);
+        }
+      }
+    }
+    return list;
+  }, [item?.image_url, item?.additional_images]);
+
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -62,7 +95,10 @@ export default function ItemDetailsPage() {
   // Claimant state
   const [userClaim, setUserClaim] = useState<ClaimRow | null>(null);
   const [approvedClaim, setApprovedClaim] = useState<ClaimRow | null>(null);
+  const [hasPendingClaim, setHasPendingClaim] = useState<boolean>(false);
   const [isClaimModalOpen, setIsClaimModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
   // Reporter review state
   const [reporterClaims, setReporterClaims] = useState<ReporterClaimDetail[]>([]);
@@ -123,7 +159,7 @@ export default function ItemDetailsPage() {
           const { data: rawClaimData } = await (supabase
             .from("claims") as any)
             .select("*")
-            .eq("lost_item_id", itemId)
+            .or(`lost_item_id.eq.${itemId},claimant_item_id.eq.${itemId}`)
             .eq("claimant_id", currentUser.id)
             .maybeSingle();
 
@@ -146,30 +182,67 @@ export default function ItemDetailsPage() {
           }
         }
 
-        // 5. Always fetch the approved claim if item is claimed or returned
-        if (itemData.status === "claimed" || itemData.status === "returned") {
-          const { data: rawApprovedClaim } = await (supabase
-            .from("claims") as any)
+        // 5. Fetch approved claim associated with this item (either as target or claimant item)
+        const { data: rawApprovedClaim } = await (supabase
+          .from("claims") as any)
+          .select("*")
+          .or(`lost_item_id.eq.${itemId},claimant_item_id.eq.${itemId}`)
+          .eq("status", "approved")
+          .maybeSingle();
+
+        const approvedClaimObj = (rawApprovedClaim as ClaimRow) ?? null;
+        setApprovedClaim(approvedClaimObj);
+
+        // Fetch target item if current page is viewing claimant_item_id
+        if (approvedClaimObj && approvedClaimObj.lost_item_id !== itemId) {
+          const { data: rawTargetData } = await (supabase
+            .from("lost_items") as any)
             .select("*")
-            .eq("lost_item_id", itemId)
-            .eq("status", "approved")
+            .eq("id", approvedClaimObj.lost_item_id)
             .maybeSingle();
 
-          setApprovedClaim((rawApprovedClaim as ClaimRow) ?? null);
+          setTargetItem((rawTargetData as LostItem) ?? null);
+        } else {
+          setTargetItem(null);
+        }
 
-          // Fetch active/completed handover details
-          const { data: rawHandovers } = await (supabase as any).rpc(
-            "get_handover_details",
-            { p_item_id: itemId }
-          );
+        // Fetch active/completed handover details
+        if (approvedClaimObj) {
+          const { data: rawHandoverData } = await (supabase
+            .from("handovers") as any)
+            .select("*")
+            .eq("claim_id", approvedClaimObj.id)
+            .in("status", ["active", "completed"])
+            .maybeSingle();
 
-          if (rawHandovers && Array.isArray(rawHandovers) && rawHandovers.length > 0) {
-            const activeH = rawHandovers[0] as HandoverDetail;
-            setHandover(activeH);
+          if (rawHandoverData) {
+            setHandover(rawHandoverData as HandoverDetail);
+          } else {
+            // Fallback to RPC if direct claim_id lookup returns null
+            const { data: rawHandovers } = await (supabase as any).rpc(
+              "get_handover_details",
+              { p_item_id: itemId }
+            );
+
+            if (rawHandovers && Array.isArray(rawHandovers) && rawHandovers.length > 0) {
+              setHandover(rawHandovers[0] as HandoverDetail);
+            } else {
+              setHandover(null);
+            }
           }
         } else {
-          setApprovedClaim(null);
+          setHandover(null);
         }
+
+        // Check if any pending claim exists on this item from any user
+        const { data: rawPendingClaims } = await (supabase
+          .from("claims") as any)
+          .select("id")
+          .or(`lost_item_id.eq.${itemId},claimant_item_id.eq.${itemId}`)
+          .eq("status", "pending")
+          .limit(1);
+
+        setHasPendingClaim(Array.isArray(rawPendingClaims) && rawPendingClaims.length > 0);
       }
     } catch (err) {
       setError(
@@ -436,19 +509,51 @@ export default function ItemDetailsPage() {
   }
 
   const isReporter = user?.id === item.user_id;
-  const isApprovedClaimant = user?.id === (approvedClaim?.claimant_id || userClaim?.claimant_id);
   const itemType = item.item_type || (item.status === "found" ? "found" : "lost");
 
-  // Derive roles based on report direction (item_type):
-  // FOUND item: reporter has physical item (holder), claimant is receiving (receiver)
-  // LOST item: claimant has physical item (holder), reporter is receiving (receiver)
-  const isPhysicalHolder = itemType === "found"
-    ? isReporter
-    : isApprovedClaimant;
+  // Explicit Participant Role IDs (Security Boundary: Exact Equality Only)
+  let physicalHolderId: string | null = null;
+  let receiverId: string | null = null;
 
-  const isReceiver = itemType === "found"
-    ? isApprovedClaimant
-    : isReporter;
+  if (handover) {
+    // 1. Authoritative roles stored on active/completed handover session:
+    // reporter_id = Physical Holder ID
+    // claimant_id = Receiver ID
+    physicalHolderId = handover.reporter_id;
+    receiverId = handover.claimant_id;
+  } else if (approvedClaim) {
+    // 2. Derive explicit roles from target report (lost_item_id) & approved claim:
+    const targetReport = item.id === approvedClaim.lost_item_id ? item : targetItem;
+
+    if (targetReport) {
+      const targetItemType = targetReport.item_type || (targetReport.status === "found" ? "found" : "lost");
+      if (targetItemType === "found") {
+        // TARGET = FOUND: Physical Holder is target report owner, Receiver is claimant
+        physicalHolderId = targetReport.user_id;
+        receiverId = approvedClaim.claimant_id;
+      } else {
+        // TARGET = LOST: Physical Holder is claimant, Receiver is target report owner
+        physicalHolderId = approvedClaim.claimant_id;
+        receiverId = targetReport.user_id;
+      }
+    } else if (!approvedClaim.claimant_item_id) {
+      // Legacy claim without claimant_item_id (current page is target report)
+      const targetItemType = item.item_type || (item.status === "found" ? "found" : "lost");
+      if (targetItemType === "found") {
+        physicalHolderId = item.user_id;
+        receiverId = approvedClaim.claimant_id;
+      } else {
+        physicalHolderId = approvedClaim.claimant_id;
+        receiverId = item.user_id;
+      }
+    }
+  } else if (userClaim) {
+    receiverId = userClaim.claimant_id;
+  }
+
+  // Strict exact equality authorization checks (Fail closed)
+  const isPhysicalHolder = Boolean(user?.id && physicalHolderId && user.id === physicalHolderId);
+  const isReceiver = Boolean(user?.id && receiverId && user.id === receiverId);
 
   const originalDirection = itemType.toUpperCase();
 
@@ -494,28 +599,74 @@ export default function ItemDetailsPage() {
         {/* Item Card Container */}
         <article className="overflow-hidden rounded-2xl border border-[#E8E6E1] bg-white shadow-2xs">
           <div className="grid grid-cols-1 md:grid-cols-2">
-            {/* Image Column */}
-            <div className="relative aspect-[4/3] md:aspect-auto w-full bg-[#FAFAF8] flex items-center justify-center border-b md:border-b-0 md:border-r border-[#E8E6E1]">
-              {item.image_url ? (
-                <img
-                  src={item.image_url}
-                  alt={item.title}
-                  className="h-full w-full object-cover"
-                />
-              ) : (
-                <div className="flex flex-col items-center gap-2 text-[#6B6B67]">
-                  <svg className="h-12 w-12 opacity-30" fill="none" viewBox="0 0 24 24" strokeWidth={1.2} stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0022.5 18.75V5.25A2.25 2.25 0 0020.25 3H3.75A2.25 2.25 0 001.5 5.25v13.5A2.25 2.25 0 003.75 21z" />
-                  </svg>
-                  <span className="text-xs font-medium">No photo available</span>
+            {/* Image & Gallery Column */}
+            <div className="relative w-full bg-[#FAFAF8] flex flex-col justify-between border-b md:border-b-0 md:border-r border-[#E8E6E1]">
+              {/* Main Active Image Display */}
+              <div className="relative aspect-[4/3] md:aspect-auto md:min-h-[320px] w-full flex-1 flex items-center justify-center overflow-hidden">
+                {galleryImages.length > 0 ? (
+                  <img
+                    src={galleryImages[activeImageIndex] || galleryImages[0]}
+                    alt={item.title}
+                    className="h-full w-full object-cover transition duration-150"
+                  />
+                ) : (
+                  <div className="flex flex-col items-center gap-2 text-[#6B6B67] py-12">
+                    <svg className="h-12 w-12 opacity-30" fill="none" viewBox="0 0 24 24" strokeWidth={1.2} stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0022.5 18.75V5.25A2.25 2.25 0 0020.25 3H3.75A2.25 2.25 0 001.5 5.25v13.5A2.25 2.25 0 003.75 21z" />
+                    </svg>
+                    <span className="text-xs font-medium">No photo available</span>
+                  </div>
+                )}
+
+                {/* Report Type & Status Badges */}
+                <div className="absolute left-3 top-3 flex flex-wrap items-center gap-1.5 z-10">
+                  <span
+                    className={`rounded-md border px-2.5 py-0.5 text-[10px] font-bold tracking-wider uppercase ${
+                      itemType === "found"
+                        ? "bg-emerald-50 text-[#4F7C68] border-emerald-200"
+                        : "bg-red-50 text-[#C94A4A] border-red-200"
+                    }`}
+                  >
+                    {itemType === "found" ? "FOUND REPORT" : "LOST REPORT"}
+                  </span>
+
+                  {item.status !== "lost" && item.status !== "found" && (
+                    <span
+                      className={`rounded-md border px-2.5 py-0.5 text-[10px] font-bold tracking-wider uppercase ${statusBadgeStyle}`}
+                    >
+                      {item.status.toUpperCase()}
+                    </span>
+                  )}
+                </div>
+
+                {/* Multi-image counter badge */}
+                {galleryImages.length > 1 && (
+                  <div className="absolute right-3 bottom-3 rounded-full bg-black/60 px-2.5 py-0.5 text-[10px] font-bold text-white tracking-wider backdrop-blur-xs z-10">
+                    {activeImageIndex + 1} / {galleryImages.length}
+                  </div>
+                )}
+              </div>
+
+              {/* Thumbnails Row (when multiple images exist) */}
+              {galleryImages.length > 1 && (
+                <div className="flex items-center gap-2 p-3 bg-white border-t border-[#E8E6E1] overflow-x-auto no-scrollbar">
+                  {galleryImages.map((imgUrl, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => setActiveImageIndex(idx)}
+                      aria-label={`View image ${idx + 1}`}
+                      className={`relative shrink-0 h-12 w-12 rounded-lg overflow-hidden border transition duration-150 ${
+                        activeImageIndex === idx
+                          ? "border-[#7A1F2B] ring-2 ring-[#7A1F2B]/20 scale-105"
+                          : "border-[#E8E6E1] opacity-70 hover:opacity-100"
+                      }`}
+                    >
+                      <img src={imgUrl} alt={`Thumbnail ${idx + 1}`} className="h-full w-full object-cover" />
+                    </button>
+                  ))}
                 </div>
               )}
-
-              <span
-                className={`absolute left-3 top-3 rounded-md border px-2.5 py-0.5 text-[10px] font-bold tracking-wider uppercase ${statusBadgeStyle}`}
-              >
-                {statusLabel}
-              </span>
             </div>
 
             {/* Details Column */}
@@ -523,12 +674,53 @@ export default function ItemDetailsPage() {
               <div>
                 <div className="flex items-center justify-between text-xs font-semibold text-[#6B6B67] uppercase tracking-wider mb-2">
                   <span>{item.category}</span>
-                  <span>{getRelativeTime(item.created_at)}</span>
+                  <div className="flex items-center gap-2">
+                    <span>{getRelativeTime(item.created_at)}</span>
+                  </div>
                 </div>
 
-                <h1 className="text-xl font-extrabold text-[#171717] sm:text-2xl">
-                  {item.title}
-                </h1>
+                {/* Header Title & Owner Actions */}
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <h1 className="text-xl font-extrabold text-[#171717] sm:text-2xl">
+                    {item.title}
+                  </h1>
+
+                  {isReporter && (
+                    <div className="flex items-center gap-1.5">
+                      {item.status !== "claimed" &&
+                      item.status !== "returned" &&
+                      !approvedClaim &&
+                      !handover ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setIsEditModalOpen(true)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-[#E8E6E1] bg-[#FAFAF8] px-2.5 py-1 text-[11px] font-bold text-[#171717] transition hover:bg-[#E8E6E1]"
+                          >
+                            <svg className="h-3.5 w-3.5 text-[#6B6B67]" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+                            </svg>
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setIsDeleteModalOpen(true)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-bold text-[#C94A4A] transition hover:bg-red-100"
+                          >
+                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                            </svg>
+                            Delete
+                          </button>
+                        </>
+                      ) : (
+                        <span className="rounded-lg bg-amber-50 border border-amber-200/60 px-2 py-0.5 text-[10px] font-bold text-[#B88A3B]">
+                          LOCKED (IN HANDOVER/RETURNED)
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
 
                 <div className="mt-4 space-y-2 text-xs border-t border-[#E8E6E1] pt-4">
                   <div className="flex items-center gap-2 text-[#171717]">
@@ -553,11 +745,11 @@ export default function ItemDetailsPage() {
 
               {/* Claim Action Box */}
               <div className="mt-6 border-t border-[#E8E6E1] pt-4">
-                {item.status === "returned" ? (
+                {item.status === "returned" || handover?.status === "completed" ? (
                   <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3.5 text-center text-xs font-medium text-[#4F7C68]">
                     ✓ RETURNED — This item was physically handed over to its verified owner.
                   </div>
-                ) : item.status === "claimed" ? (
+                ) : item.status === "claimed" || approvedClaim || handover?.status === "active" ? (
                   isPhysicalHolder || isReceiver ? (
                     <div className="rounded-xl border border-amber-200 bg-amber-50 p-3.5 text-center text-xs font-medium text-[#B88A3B]">
                       CLAIM APPROVED — Ready for physical handover on campus. Scroll down to manage handover.
@@ -585,12 +777,16 @@ export default function ItemDetailsPage() {
                     {userClaim.status === "rejected" && "Your claim was reviewed and rejected."}
                     {userClaim.status === "pending" && "Your claim is pending review."}
                   </div>
+                ) : hasPendingClaim ? (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-3.5 text-center text-xs font-medium text-[#B88A3B]">
+                    CLAIM UNDER REVIEW — A claim for this item has already been submitted and is under review.
+                  </div>
                 ) : (
                   <button
                     onClick={handleClaimButtonClick}
                     className="w-full rounded-xl bg-[#7A1F2B] py-3 text-xs font-bold text-white shadow-2xs transition hover:bg-[#631822] focus:outline-none"
                   >
-                    Claim This Item
+                    {itemType === "lost" ? "I Found This Item" : "Claim This Item"}
                   </button>
                 )}
               </div>
@@ -940,9 +1136,29 @@ export default function ItemDetailsPage() {
       {item && isClaimModalOpen && (
         <ClaimModal
           itemId={item.id}
+          claimantItemId={claimantItemId}
+          isAiInitiated={Boolean(claimantItemId)}
           itemTitle={item.title}
           onClose={() => setIsClaimModalOpen(false)}
           onSuccess={fetchItemData}
+        />
+      )}
+
+      {/* Edit Report Modal */}
+      {item && isEditModalOpen && (
+        <EditReportModal
+          item={item}
+          onClose={() => setIsEditModalOpen(false)}
+          onSuccess={fetchItemData}
+        />
+      )}
+
+      {/* Delete Report Confirmation Modal */}
+      {item && isDeleteModalOpen && (
+        <DeleteConfirmModal
+          item={item}
+          onClose={() => setIsDeleteModalOpen(false)}
+          onSuccess={() => router.push("/")}
         />
       )}
     </div>
