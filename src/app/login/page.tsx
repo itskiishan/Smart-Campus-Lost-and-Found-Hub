@@ -56,10 +56,18 @@ export default function LoginPage() {
       setLoading(true);
 
       try {
+        const redirectUrl =
+          typeof window !== "undefined"
+            ? `${window.location.origin}/login`
+            : process.env.NEXT_PUBLIC_SITE_URL
+            ? `${process.env.NEXT_PUBLIC_SITE_URL}/login`
+            : "http://localhost:3000/login";
+
         const { data, error: signUpError } = await supabase.auth.signUp({
           email: trimmedEmail,
           password,
           options: {
+            emailRedirectTo: redirectUrl,
             data: {
               full_name: fullName.trim(),
               admission_number: trimmedAdmission,
