@@ -238,14 +238,8 @@ export default function Dashboard() {
               No lost items found
             </h2>
             <p className="mt-0.5 max-w-xs text-xs text-[#6B6B67]">
-              Nothing matches your search or filter. Be the first to report an item.
+              Nothing matches your search or filter.
             </p>
-            <Link
-              href={reportHref}
-              className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-[#7A1F2B] px-3.5 py-1.5 text-xs font-semibold text-white shadow-2xs transition hover:bg-[#631822]"
-            >
-              + Report an item
-            </Link>
           </div>
         ) : (
           /* 3-Column Responsive SaaS Grid */
@@ -260,19 +254,6 @@ export default function Dashboard() {
           </div>
         )}
       </main>
-
-      {/* Floating Mobile Report Action */}
-      <div className="fixed bottom-4 right-4 sm:hidden z-30">
-        <Link
-          href={reportHref}
-          className="flex items-center gap-1.5 rounded-full bg-[#7A1F2B] px-4 py-2.5 text-xs font-semibold text-white shadow-md transition active:scale-95"
-        >
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-          </svg>
-          Report
-        </Link>
-      </div>
     </div>
   );
 }
